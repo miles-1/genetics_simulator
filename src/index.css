@@ -1,0 +1,171 @@
+/* fonts */
+@font-face {
+    font-family: "Arvo";
+    src: url("fonts/Arvo.ttf");
+}
+@font-face {
+    font-family: "MontserratR";
+    src: url("fonts/Montserrat-Regular.ttf");
+}
+@font-face {
+    font-family: "MontserratB";
+    src: url("fonts/Montserrat-Bold.ttf");
+}
+@font-face {
+    font-family: "MontserratT";
+    src: url("fonts/Montserrat-Thin.ttf");
+}
+@font-face {
+    font-family: "RedHat";
+    src: url("fonts/RedHat.ttf");
+}
+
+/* Global Vars
+Colors from https://coolors.co/palette/e63946-f1faee-a8dadc-457b9d-1d3557 */
+
+:root {
+    --base: #f1faee;
+    --bg: #1d3557;
+    --accent1: #e63946;
+    --accent2: #a8dadc;
+    --accent3: #457b9d;
+    --text: #eeeeee;
+    font-family: MontserratR, Helvetica, sans-serif;
+}
+
+body {
+    background-color: var(--base);
+}
+
+input {
+    padding: 2px;
+    border-radius: 4px;
+    font-family: RedHat, Courier, monospace;
+    margin: 5px;
+    width: 50px;
+}
+
+input[type=checkbox] {
+    border: 1px solid var(--accent2);
+    background-color: var(--accent3);
+    color: var(--accent2);
+}
+
+input[type=number] {
+    -moz-appearance:textfield;
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+table {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+h1 {
+    text-align: center;
+    padding: 30px;
+    padding: 30px 200px 30px 200px;
+    border: 2px solid var(--accent3);
+    background-color: var(--accent2);
+    color: var(--accent3);
+    margin-top: 0px;
+    margin-left: 0px;
+    margin-right: 0px;
+}
+
+.button {
+    border: 1px solid var(--accent2);
+    background-color: var(--accent3);
+    color: var(--accent2);
+    border-radius: 5px;
+    padding: 5px;
+    margin-left: 5px;
+    margin-right: 5px;
+    font-family: MontserratR, Helvetica, sans-serif;
+    cursor: pointer;
+}
+
+.valid_input {
+    border: 1px solid var(--accent2);
+    background-color: var(--accent3);
+    color: var(--accent2);
+    caret-color: var(--accent2);
+}
+
+.invalid_input {
+    border: 1px solid var(--accent1);
+    background-color: var(--accent2);
+    color: var(--accent1);
+    caret-color: var(--accent1);
+}
+
+.input_title {
+    text-align: right;
+}
+
+.code {
+    font-family: RedHat, Courier, monospace;
+}
+
+.divider {
+    width: 50%;
+    text-align: center;
+    border-color: var(--accent3)
+}
+
+.options_subtitle {
+    text-align: left;
+}
+
+.to_hide {
+    display: none;
+}
+
+#error_message {
+    text-align: center;
+    font-size: 8pt;
+    color: var(--accent1);
+    padding-top: 10px;
+    padding-bottom: 10px;
+    background-color: var(--accent2);
+    border-radius: 10px;
+    margin-top: 10px;
+}
+
+#main {
+    display: flex;
+    width: 100%;
+}
+
+#graph {
+    flex: 3;
+}
+
+#options {
+    background-color: var(--bg);
+    color: var(--text);
+    padding: 15px;
+    border-radius: 10px;
+    min-width: 210px;
+    flex: 1;
+}
+
+#options_title {
+    text-align: center;
+    font-weight: bold;
+}
+
+#bottom_notes {
+    color: #000000;
+    font-size: 8pt;
+    text-align: center;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    margin-bottom: 15px;
+}
