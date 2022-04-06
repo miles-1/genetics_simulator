@@ -1,6 +1,6 @@
-import React from 'react';
-import ReactDOM from 'react-dom';
-import './index.css';
+import React from "react";
+import ReactDOM from "react-dom";
+import "./index.css";
 import { 
     LineChart, 
     Line, 
@@ -9,26 +9,44 @@ import {
     CartesianGrid, 
     Tooltip,
     ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 
 function round(num, digits=5) {
     return  num === "" ? num : (Math.round(10 ** digits * num) / 10 ** digits);
 }
 
-function getName(num, type) {
+function getName(num, type, freq=false) {
     let end;
     if (type === 1) {
         end = "_freq(A1)"
     } else if (type === 2) {
         end = "_freq(A2)"
-    } else if (type === 11) {
+    } else if (type === 11 && !freq) {
         end = "_A1A1"
-    } else if (type === 12) {
+    } else if (type === 11) {
+        end = "_freq(A1A1)"
+    } else if (type === 12 && !freq) {
         end = "_A1A2"
-    } else if (type === 22) {
+    } else if (type === 12) {
+        end = "_freq(A1A2)"
+    } else if (type === 22 && !freq) {
         end = "_A2A2"
+    } else if (type === 22) {
+        end = "_freq(A2A2)"
     }
     return "Pop" + num + end
+}
+
+function getKeyandIndex(string) {
+    if (string.includes("I")) {
+        let full_key, index;
+        let slice_index = string.indexOf("I");
+        full_key = string.slice(0, slice_index);
+        index = parseInt(string.slice(slice_index + 1));
+        return ([full_key, index]);
+    } else {
+        return ([string, -1]);
+    }
 }
 
 const defaults = {
@@ -36,7 +54,6 @@ const defaults = {
     num_gens: 100,
     pop_size: 250,
     freq_a1: 0.5,
-    freq_a2: 0.5,
     fit_11: 1,
     fit_12: 1,
     fit_22: 1,
@@ -45,144 +62,247 @@ const defaults = {
     mig_rate: 0,
 };
 
+const data_keys = [
+    "num_pops",
+    "num_gens",
+    "pop_size",
+    "freqs_a1",
+    "fitness",
+    "mutation",
+    "mig_rate",
+];
+
+const check_keys = [
+    "check_pop",
+    "check_freq",
+    "check_fit",
+    "check_mut",
+    "check_mig",
+];
+
 class App extends React.Component {
     constructor(props) {
         super(props);
         this.state = {
-            values: [
-                defaults.num_pops,
-                defaults.num_gens,
-                defaults.pop_size,
-                defaults.freq_a1,
-                defaults.freq_a2,
+            num_pops: defaults.num_pops,
+            num_gens: defaults.num_gens,
+            pop_size: defaults.pop_size,
+            freqs_a1: defaults.freq_a1,
+            fitness: [
                 defaults.fit_11,
                 defaults.fit_12,
                 defaults.fit_22,
+            ],
+            mutation: [
                 defaults.mut_12,
                 defaults.mut_21,
-                defaults.mig_rate,
             ],
-            is_valid: Array(11).fill(true),
-            actives: [false, false, false],
-            data: [],
-            message: false,
+            mig_rate: defaults.mig_rate,
+            is_entry_valid: {
+                num_pops: true,
+                num_gens: true,
+                pop_size: true,
+                freqs_a1: true,
+            },
+            is_checked: check_keys.reduce((l, c) => Object.assign(l, {[c]: false}), {}),
+            sim_data: [],
+            run_message: 0,
             lines: 0,
         };
 
-        this.handleChange = this.handleChange.bind(this);
-        this.shouldRender = this.shouldRender.bind(this);
+        this.handleEntryChange = this.handleEntryChange.bind(this);
         this.handleClick = this.handleClick.bind(this);
         this.runSimulation = this.runSimulation.bind(this);
     }
 
-    handleChange(event, index) {
-        const values = this.state.values.slice();
-        const is_valid = this.state.is_valid.slice();
-        // num pops, num gens and pop size
-        if (index <= 2) {
-            const count = round(event.target.value, 0);
-            values[index] = count;
-            is_valid[index] = index === 0 ? (0 < count && count <= 10) : (0 < count);
-        // freq a1, freq a2, fit 11, fit 12, fit 22, mut 12, mut 21, mig rate
-        } else if (3 <= index) {
-            const prop = round(event.target.value);
-            values[index] = prop;
-            is_valid[index] = prop === "" ? false : (0 <= prop && prop <= 1);
-            // freq a1, freq a2
-            if ((index === 3 || index === 4) && prop !== "") {
-                const comp = round(1 - prop);
-                values[7 - index] = comp;
-                is_valid[7 - index] = 0 <= comp && comp <= 1
+    handleEntryChange(event, key, is_int) {
+        let updates = {is_entry_valid: Object.assign({}, this.state.is_entry_valid)},
+            key_info = getKeyandIndex(key);
+        let input, valid;
+        // round input and calculate if valid
+        if (key === "num_pops") {
+            input = round(event.target.value, 0);
+            valid = (0 < input && input <= 10);
+            if (valid && this.state.is_checked["check_freq"]) {
+                updates["freqs_a1"] = Array(input).fill(defaults["freq_a1"]);
+                for (let i = 0; i < input; i++) {
+                    updates.is_entry_valid["freqs_a1I" + i] = true;
+                }
+                for (let i = input; i < 10; i++) {
+                    delete updates.is_entry_valid["freqs_a1I" + i];
+                }
             }
-        }
-        this.setState({
-            values: values,
-            is_valid: is_valid,
-        })
-    }
-
-    shouldRender(index) {
-        if (index <= 4) {
-            return true;
-        } else if (5 <= index && index <= 7 && this.state.actives[0]) {
-            return true;
-        } else if (8 <= index && index <= 9 && this.state.actives[1]) {
-            return true;
-        } else if (index === 10 && this.state.actives[2]) {
-            return true;
+        } else if (is_int) {
+            input = round(event.target.value, 0);
+            valid = (0 < input);
         } else {
-            return false;
+            input = round(event.target.value);
+            valid = input === "" ? false : (0 <= input && input <= 1);
         }
+        // set validity
+        updates.is_entry_valid[key] = valid;
+        // set value
+        if (key_info[1] >= 0) {
+            let values = {[key_info[0]]: this.state[key_info[0]].slice()};
+            values[key_info[0]][key_info[1]] = input;
+            updates = Object.assign(values, updates);
+        } else {
+            updates[key] = input;
+        }
+        this.setState(updates)
     }
 
-    handleClick(event, index) {
-        const actives = this.state.actives.slice(),
-            values = this.state.values.slice(),
-            is_valid = this.state.is_valid.slice(),
-            default_vals = Object.values(defaults);
-        let checkbox_state = !actives[index];
-        actives[index] = !actives[index]
-        if (!checkbox_state) {
-            if (index === 0) {
-                for (let i = 5; i <= 7; i++) {
-                    values[i] = default_vals[i];
-                    is_valid[i] = true;
-                }
-            } else if (index === 1) {
-                for (let i = 8; i <= 9; i++) {
-                    values[i] = default_vals[i];
-                    is_valid[i] = true;
-                }
-            } else if (index === 2) {
-                values[10] = default_vals[10];
-                is_valid[10] = true;
+    handleClick(event, key) {
+        let is_checked = Object.assign({}, this.state.is_checked),
+            new_state = !is_checked[key],
+            pop_size = this.state.pop_size,
+            freqs_a1 = this.state.freqs_a1,
+            fitness = this.state.fitness.slice(),
+            mutation = this.state.mutation.slice(),
+            mig_rate = this.state.mig_rate,
+            is_entry_valid = Object.assign({}, this.state.is_entry_valid);
+        is_checked[key] = new_state;
+        if (key === "check_pop") {
+            if (new_state) {
+                pop_size = Infinity;
+                delete is_entry_valid["pop_size"];
+            } else {
+                pop_size = defaults["pop_size"];
+                is_entry_valid["pop_size"] = true;
             }
-        }
+        } else if (key === "check_freq") {
+            if (new_state) {
+                freqs_a1 = Array(this.state.num_pops).fill(defaults["freq_a1"]);
+                delete is_entry_valid["freqs_a1"];
+                for (let i = 0; i < this.state.num_pops; i++) {
+                    is_entry_valid["freqs_a1I" + i] = true
+                }
+            } else {
+                freqs_a1 = defaults["freq_a1"];
+                is_entry_valid["freqs_a1"] = true;
+                for (let i = 0; i < this.state.num_pops; i++) {
+                    delete is_entry_valid["freqs_a1I" + i];
+                }
+            }
+        } else if (key === "check_fit") {
+            fitness = [defaults.fit_11, defaults.fit_12, defaults.fit_22,];
+            if (new_state) {
+                for (let i = 0; i < 3; i++) {
+                    is_entry_valid["fitnessI" + i] = true;
+                }
+            } else {
+                for (let i = 0; i < 3; i++) {
+                    delete is_entry_valid["fitnessI" + i];
+                }
+            }
+        } else if (key === "check_mut") {
+            mutation = [defaults.mut_12, defaults.mut_21,];
+            if (new_state) {
+                for (let i = 0; i < 2; i++) {
+                    is_entry_valid["mutationI" + i] = true;
+                }
+            } else {
+                for (let i = 0; i < 3; i++) {
+                    delete is_entry_valid["mutationI" + i];
+                }
+            }
+        } else if (key === "check_mig") {
+            mig_rate = defaults.mig_rate;
+            if (new_state) {
+                is_entry_valid["mig_rate"] = true;
+            } else {
+                delete is_entry_valid["mig_rate"]
+            }
+        } 
         this.setState({
-            actives: actives,
-            values: values,
-            is_valid: is_valid,
+            pop_size: pop_size,
+            freqs_a1: freqs_a1,
+            fitness: fitness,
+            mutation: mutation,
+            mig_rate: mig_rate,
+            is_checked: is_checked,
+            is_entry_valid: is_entry_valid,
         })
     }
 
-    getAlleleFreq(a1a1, a1a2, a2a2) {
-        let sum = a1a1 + a1a2 + a2a2;
-        return [round((a1a1 + 0.5*a1a2)/sum), round((a2a2 + 0.5*a1a2)/sum)];
+    _getInfFreqs(pop_num, freq11, freq12, freq22) {
+        let sum = freq11 + freq12 + freq22;
+        return {
+            [getName(pop_num, 1)]: round((freq11 + 0.5 * freq12) / sum),
+            [getName(pop_num, 2)]: round((freq22 + 0.5 * freq12) / sum),
+        }
     }
 
-    getInitialPop() {
-        let rand = Math.random(),
-            num_pops = this.state.values[0],
-            pop_size = this.state.values[2],
-            p = this.state.values[3],
-            q = this.state.values[4],
-            temp_obj = {};
-        for (let i = 0; i < num_pops; i++) {
-            let a1a1, a1a2, a2a2;
-            if (rand < 1/3) {
-                a1a1 = Math.round(p**2 * pop_size);
-                a1a2 = Math.round(2*p*q * pop_size);
-                a2a2 = pop_size - a1a1 - a1a2;
-            } else if (rand < 2/3) {
-                a1a1 = Math.round(p**2 * pop_size);
-                a2a2 = Math.round(q**2 * pop_size);
-                a1a2 = pop_size - a1a1 - a2a2;
-            } else {
-                a1a2 = Math.round(2*p*q * pop_size);
-                a2a2 = Math.round(q**2 * pop_size);
-                a1a1 = pop_size - a1a2 - a2a2;
-            }
-            let alleles = this.getAlleleFreq(a1a1, a1a2, a2a2);
-            temp_obj[getName(i, 1)] = alleles[0];
-            temp_obj[getName(i, 2)] = alleles[1];
-            temp_obj[getName(i, 11)] = a1a1;
-            temp_obj[getName(i, 12)] = a1a2;
-            temp_obj[getName(i, 22)] = a2a2;
+    _getBndFreqs(pop_num, num11, num12, num22) {
+        let sum = num11 + num12 + num22;
+        return {
+            [getName(pop_num, 1)]: round((num11 + 0.5 * num12) / sum),
+            [getName(pop_num, 2)]: round((num22 + 0.5 * num12) / sum),
+            [getName(pop_num, 11, true)]: round(num11 / sum),
+            [getName(pop_num, 12, true)]: round(num12 / sum),
+            [getName(pop_num, 22, true)]: round(num22 / sum),
+        }
+    }
+
+    _getInfInitialPop(temp_obj, freqs) {
+        for (let i = 0; i < this.state.num_pops; i++) {
+            let p = freqs[i],
+                q = round(1 - p),
+                freq11 = round(p**2),
+                freq12 = round(2*p*q),
+                freq22 = 1 - freq11 - freq12;
+            temp_obj[getName(i, 1)] = p;
+            temp_obj[getName(i, 2)] = q;
+            temp_obj[getName(i, 11)] = Infinity;
+            temp_obj[getName(i, 12)] = Infinity;
+            temp_obj[getName(i, 22)] = Infinity;
+            temp_obj[getName(i, 11, true)] = freq11;
+            temp_obj[getName(i, 12, true)] = freq12;
+            temp_obj[getName(i, 22, true)] = freq22;
         }
         return temp_obj;
     }
 
-    getOffspring(obj, pop_num) {
+    _getBndInitialPop(temp_obj, freqs) {
+        for (let i = 0; i < this.state.num_pops; i++) {
+            let num11, num12, num22;
+            let p = freqs[i],
+                q = round(1 - p),
+                rand = Math.random();
+            if (rand < 1/3) {
+                num11 = Math.round(p**2 * this.state.pop_size);
+                num12 = Math.round(2*p*q * this.state.pop_size);
+                num22 = this.state.pop_size - num11 - num12;
+            } else if (rand < 2/3) {
+                num11 = Math.round(p**2 * this.state.pop_size);
+                num22 = Math.round(q**2 * this.state.pop_size);
+                num12 = this.state.pop_size - num11 - num22;
+            } else {
+                num12 = Math.round(2*p*q * this.state.pop_size);
+                num22 = Math.round(q**2 * this.state.pop_size);
+                num11 = this.state.pop_size - num12 - num22;
+            }
+            temp_obj[getName(i, 11)] = num11;
+            temp_obj[getName(i, 12)] = num12;
+            temp_obj[getName(i, 22)] = num22;
+            Object.assign(temp_obj, this._getBndFreqs(i, num11, num12, num22));
+        }
+        return temp_obj;
+    }
+
+    getInitialPop() {
+        let freqs = this.state.freqs_a1;
+        if (typeof freqs === "number") {
+            freqs = Array(this.state.num_pops).fill(freqs)
+        }
+        if (this.state.is_checked["check_pop"]) {
+            return this._getInfInitialPop({}, freqs)
+        } else {
+            return this._getBndInitialPop({}, freqs)
+        }
+    }
+
+    ______getOffspring(obj, pop_num) {
         let fit11 = this.state.values[5],
             fit12 = this.state.values[6],
             fit22 = this.state.values[7],
@@ -237,7 +357,7 @@ class App extends React.Component {
         }
     }
 
-    getMutantOffspring(obj, pop_num) {
+    ______getMutantOffspring(obj, pop_num) {
         let m12 = this.state.values[8],
             m21 = this.state.values[9],
             child = this.getOffspring(obj, pop_num),
@@ -269,20 +389,15 @@ class App extends React.Component {
         }
     }
 
-    getNextGen(obj) {
-        let is_mut = this.state.actives[1],
-            is_mig = this.state.actives[2],
-            num_pops = this.state.values[0],
-            pop_size = this.state.values[2],
-            mig_rate = this.state.values[10],
-            temp_obj = {};
-        for (let i = 0; i < num_pops; i++) {
+    ______getNextGen(obj) {
+        let temp_obj = {};
+        for (let i = 0; i < this.state.num_pops; i++) {
             let num11 = 0,
                 num12 = 0,
                 num22 = 0;
-            for (let j = 0; j < pop_size; j++) {
+            for (let j = 0; j < this.state.pop_size; j++) {
                 let child;
-                if (is_mut) {
+                if (this.state.is_checked["check_mut"]) {
                     child = this.getMutantOffspring(obj, i)
                 } else {
                     child = this.getOffspring(obj, i)
@@ -300,71 +415,109 @@ class App extends React.Component {
             temp_obj[getName(i, 22)] = num22;
         }
         let temp_copy;
-        if (is_mig) {
+        if (this.state.is_checked["check_mig"]) {
             temp_copy = Object.assign({}, temp_obj);
         }
-        for (let i = 0; i < num_pops; i++) {
-            if (is_mig) {
-                let neighbor = (i % num_pops) + 1,
+        for (let i = 0; i < this.state.num_pops; i++) {
+            if (this.state.is_checked["check_mig"]) {
+                let neighbor = (i % this.state.num_pops) + 1,
                     genotypes = [11, 12, 22];
                 for (let j = 0; j < 3; j++) {
                     let gt = genotypes[j]
                     temp_obj[getName(i, gt)] =
-                        Math.round(temp_copy[getName(neighbor, gt)] * mig_rate) + 
-                        Math.round(temp_copy[getName(i, gt)] * (1 - mig_rate));
+                        Math.round(temp_copy[getName(neighbor, gt)] * this.state.mig_rate) + 
+                        Math.round(temp_copy[getName(i, gt)] * (1 - this.state.mig_rate));
                 }
             }
             let num11 = temp_obj[getName(i, 11)],
                 num12 = temp_obj[getName(i, 12)],
-                num22 = temp_obj[getName(i, 22)],
-                alleles = this.getAlleleFreq(num11, num12, num22);
-            temp_obj[getName(i, 1)] = alleles[0];
-            temp_obj[getName(i, 2)] = alleles[1];
+                num22 = temp_obj[getName(i, 22)];
+            Object.assign(temp_obj, this._getBndFreqs(i, num11, num12, num22))
         }
         return temp_obj
     }
 
+    _getNextInfGen(new_obj, obj) {
+        let mut_var = 1 - this.state.mutation[0] - this.state.mutation[1];
+        for (let i = 0; i < this.state.num_pops; i++) {
+            let x11 = obj[getName(i, 11, true)] * this.state.fitness[0],
+                x12 = obj[getName(i, 12, true)] * this.state.fitness[1],
+                x22 = obj[getName(i, 22, true)] * this.state.fitness[2],
+                sumx = x11 + x12 + x22,
+                a12 = x12 / sumx,
+                a22 = x22 / sumx,
+                numr_var = a12*mut_var + 2*a22*mut_var + 2*this.state.mutation[0],
+                next_freq11 = round((numr_var - 2)**2/4),
+                next_freq22 = round(numr_var**2/4),
+                next_freq12 = round(1 - next_freq11 - next_freq22);
+            new_obj[getName(i, 11, true)] = next_freq11;
+            new_obj[getName(i, 12, true)] = next_freq12;
+            new_obj[getName(i, 22, true)] = next_freq22;
+            new_obj[getName(i, 11)] = Infinity;
+            new_obj[getName(i, 12)] = Infinity;
+            new_obj[getName(i, 22)] = Infinity;
+            Object.assign(new_obj, this._getInfFreqs(i, next_freq11, next_freq12, next_freq22))
+        }
+        return new_obj;
+    }
+
+    getNextGen(obj) {
+        if (this.state.is_checked["check_pop"]) {
+            return this._getNextInfGen({}, obj);
+        } else {
+            // TODO
+        }
+    }
+
     runSimulation() {
-        if (this.state.is_valid.some((x) => !x)) {
+        if (Object.values(this.state.is_entry_valid).some((x) => !x)) {
             this.setState({
-                message: true
+                run_message: 1 // show error message
             })
         } else {
-            // unpack vars
-            let num_pops = this.state.values[0],
-                num_gens = this.state.values[1];
+            this.setState({
+                run_message: 2 // show run message
+            })
             // set up data stuff
             let previous_dp = Object.assign({time: 0}, this.getInitialPop());
             let data = [previous_dp];
-            for (let i = 1; i <= num_gens; i++) {
+            
+            for (let i = 1; i <= this.state.num_gens; i++) {
                 let data_point = Object.assign({time: i}, this.getNextGen(previous_dp));
-                data.push(data_point)
-                previous_dp = Object.assign({}, data_point)
+                previous_dp = Object.assign({}, data_point);
+                data.push(data_point);
             }
+            // console.log(data); // TODO
             this.setState({
-                data: data,
-                lines: num_pops,
-                message: false,
+                sim_data: data,
+                lines: this.state.num_pops,
+                run_message: 0, // reset message
             })
         }
+        
     }
 
     render() {
         return (
             <div id="main">
                 <Options
-                    values={this.state.values}
-                    is_valid={this.state.is_valid}
-                    actives={this.state.actives}
-                    message={this.state.message}
-                    handleChange={this.handleChange}
-                    shouldRender={this.shouldRender}
+                    num_pops={this.state.num_pops}
+                    num_gens={this.state.num_gens}
+                    pop_size={this.state.pop_size}
+                    freqs_a1={this.state.freqs_a1}
+                    fitness={this.state.fitness}
+                    mutation={this.state.mutation}
+                    mig_rate={this.state.mig_rate}
+                    is_entry_valid={this.state.is_entry_valid}
+                    is_checked={this.state.is_checked}
+                    run_message={this.state.run_message}
+
+                    handleEntryChange={this.handleEntryChange}
                     handleClick={this.handleClick}
                     runSimulation={this.runSimulation}
                 />
                 <Graph
-                    data={this.state.data}
-                    values={this.state.values}
+                    sim_data={this.state.sim_data}
                     lines={this.state.lines}
                 />
             </div>
@@ -373,69 +526,151 @@ class App extends React.Component {
 }
 
 class Options extends React.Component {
-    constructor(props) {
-        super(props);
-        this.titles = [
-            <span># Populations</span>,
-            <span># Generations</span>,
-            <span>Population Size</span>,
-            <span>Freq(A<sub>1</sub>)</span>,
-            <span>Freq(A<sub>2</sub>)</span>,
-            <span>A<sub>1</sub>A<sub>1</sub></span>,
-            <span>A<sub>1</sub>A<sub>2</sub></span>,
-            <span>A<sub>2</sub>A<sub>2</sub></span>,
-            <span>A<sub>1</sub> &rarr; A<sub>2</sub></span>,
-            <span>A<sub>2</sub> &rarr; A<sub>1</sub></span>,
-            <span>Rate</span>,
-            <span>Fitness</span>,
-            <span>Mutation</span>,
-            <span>Migration</span>,
+    getHRule(key) {
+        return (<tr key={key}>
+            <td colSpan={2}><hr className="divider" /></td>
+        </tr>);
+    }
+
+    getTitle(key) {
+        let key_info = getKeyandIndex(key);
+        switch (key_info[0]) {
+            // entry fields
+            case data_keys[0]:
+                return (<span># Populations</span>);
+            case data_keys[1]:
+                return (<span># Generations</span>);
+            case data_keys[2]:
+                return (<span>Population Size</span>);
+            case data_keys[3]:
+                if (key_info[1] >= 0) {
+                    return (<span>Freq(A<sub>1</sub>) - Pop {key_info[1]}</span>);
+                } else {
+                    return (<span>Freq(A<sub>1</sub>)</span>);
+                }
+            case data_keys[4]:
+                if (key_info[1] === 0) {
+                    return (<span>A<sub>1</sub>A<sub>1</sub></span>);
+                } else if (key_info[1] === 1) {
+                    return (<span>A<sub>1</sub>A<sub>2</sub></span>);
+                } else if (key_info[1] === 2) {
+                    return (<span>A<sub>2</sub>A<sub>2</sub></span>);
+                }
+            case data_keys[5]:
+                if (key_info[1] === 0) {
+                    return (<span>A<sub>1</sub> &rarr; A<sub>2</sub></span>);
+                } else if (key_info[1] === 1) {
+                    return (<span>A<sub>2</sub> &rarr; A<sub>1</sub></span>);
+                }
+            case data_keys[6]:
+                return (<span>Rate</span>);
+            
+            // checkbox fields
+            case check_keys[0]:
+                return (<span>Infinite Pop Size</span>);
+            case check_keys[1]:
+                return (<span>Variable Freq</span>);
+            case check_keys[2]:
+                return (<span>Fitness</span>);
+            case check_keys[3]:
+                return (<span>Mutation</span>);
+            case check_keys[4]:
+                return (<span>Migration</span>);
+        }
+        return (<span>Error: Title Not Found</span>);
+    }
+
+    getEntry(key, value, is_int=false) {
+        return (
+            <tr key={key}>
+                <td className="input_title">
+                    {this.getTitle(key)}
+                </td>
+                <td>
+                    <input
+                        type="number"
+                        value={value}
+                        className={this.props.is_entry_valid[key] ? "valid_input" : "invalid_input"}
+                        onChange={(event) => this.props.handleEntryChange(event, key, is_int)} />
+                </td>
+            </tr>
+        );
+    }
+
+    getCheck(key) {
+        return (
+            <tr key={key}>
+                <td colSpan={2}>
+                    <input 
+                        type="checkbox"
+                        checked={this.props.is_checked[key] ? "checked" : ""}
+                        onChange={(event) => this.props.handleClick(event, key)}
+                    />
+                    <label>
+                        {this.getTitle(key)}
+                    </label>
+                </td>
+            </tr>
+        );
+    }
+
+    getButton(title, command) {
+        return (
+            <td>
+                <button 
+                    className="button" 
+                    onClick={command}
+                >
+                    {title}
+                </button>
+            </td>
+        );
+    }
+
+    getRows() {
+        let rows = [
+            this.getEntry("num_pops", this.props.num_pops, {is_int: true}),
+            this.getEntry("num_gens", this.props.num_gens, {is_int: true}),
         ];
+        rows.push(this.getHRule("divider_1"));
+        rows.push(this.getCheck("check_pop"));
+        if (!this.props.is_checked["check_pop"]) {
+            rows.push(this.getEntry("pop_size", this.props.pop_size, {is_int: true}));
+        }
+        rows.push(this.getHRule("divider_2"));
+        rows.push(this.getCheck("check_freq"));
+        if (!this.props.is_checked["check_freq"]) {
+            rows.push(this.getEntry("freqs_a1", this.props.freqs_a1));
+        } else {
+            for (let i = 0; i < this.props.num_pops; i++) {
+                rows.push(this.getEntry("freqs_a1I" + i, this.props.freqs_a1[i]));
+            }
+        }
+        rows.push(this.getHRule("divider_3"));
+        rows.push(this.getCheck("check_fit"));
+        if (this.props.is_checked["check_fit"]) {
+            for (let i = 0; i < 3; i++) {
+                rows.push(this.getEntry("fitnessI" + i, this.props.fitness[i]));
+            }
+        }
+        rows.push(this.getHRule("divider_4"));
+        rows.push(this.getCheck("check_mut"));
+        if (this.props.is_checked["check_mut"]) {
+            for (let i = 0; i < 2; i++) {
+                rows.push(this.getEntry("mutationI" + i, this.props.mutation[i]));
+            }
+        }
+        rows.push(this.getHRule("divider_5"));
+        rows.push(this.getCheck("check_mig"));
+        if (this.props.is_checked["check_mig"]) {
+            rows.push(this.getEntry("mig_rate", this.props.mig_rate));
+        }
+        rows.push(this.getHRule("divider_6"));
+        return rows;
     }
 
     render() {
-        let rows = [];
-        for (let i = 0; i < this.props.values.length; i++) {
-            rows.push(
-                <tr key={i} className={this.props.shouldRender(i) ? "" : "to_hide"}>
-                    <td className="input_title">
-                        {this.titles[i]}
-                    </td>
-                    <td>
-                        <input
-                            type="number"
-                            value={this.props.values[i]}
-                            className={this.props.is_valid[i] ? 'valid_input' : 'invalid_input'}
-                            onChange={(event) => this.props.handleChange(event, i)} />
-                    </td>
-                </tr>
-            );
-        }
-
-        let checks = [];
-        for (let i = this.props.values.length; i < this.titles.length; i++) {
-            let temp_i = i - this.props.values.length
-            checks.push(
-                <tr>
-                    <td colSpan={2} key={i}>
-                        <input 
-                            type="checkbox"
-                            checked={this.props.actives[temp_i] ? "checked" : ""}
-                            onChange={(event) => this.props.handleClick(event, temp_i)}
-                        />
-                        <label>
-                            {this.titles[i]}
-                        </label>
-                    </td>
-                </tr>
-            );
-        }
-
-        let hrule = (
-            <tr>
-                <td colSpan={2}><hr className="divider" /></td>
-            </tr>
-        );
+        let rows = this.getRows();
 
         return (
             <div id="options">
@@ -444,43 +679,23 @@ class Options extends React.Component {
                     <hr />
                 </div>
                 <table><tbody>
-                    {rows.slice(0,3)}
-                    {hrule}
-                    {rows.slice(3,5)}
-                    {hrule}
-                    {checks[0]}
-                    {rows.slice(5,8)}
-                    {hrule}
-                    {checks[1]}
-                    {rows.slice(8,10)}
-                    {hrule}
-                    {checks[2]}
-                    {rows.slice(10,11)}
-                    {hrule}
+                    {rows}
                 </tbody></table>
                 <table><tbody><tr>
-                    <td>
-                        <button 
-                            className="button" 
-                            onClick={(_) => this.props.runSimulation()}
-                        >
-                            Run
-                        </button>
-                    </td>
-                    <td>
-                        <button 
-                            className="button" 
-                            onClick={() => alert("I haven't implimented this yet. teehee")}
-                        >
-                            Save As CSV
-                        </button>
-                    </td>
+                    {this.getButton("Run", this.props.runSimulation)}
+                    {this.getButton("Save As CSV", (_) => alert("I haven't implimented this yet. teehee"))}
                 </tr></tbody></table>
                 <div 
                     id="error_message"
-                    className={this.props.message ? "" : "to_hide"}
+                    className={this.props.run_message === 1 ? "" : "to_hide"}
                 >
                     Improper input. Correct red fields above and try again.
+                </div>
+                <div 
+                    id="normal_message"
+                    className={this.props.run_message === 2 ? "" : "to_hide"}
+                >
+                    Running Simulation...
                 </div>
             </div>
         )
@@ -515,11 +730,11 @@ class Graph extends React.Component {
         ];
 
         this.static_titles = [
-            "Proportion of A1 (allele)",
-            "Proportion of A2 (allele)",
-            "Number of A1A1 (genotype)",
-            "Number of A1A2 (genotype)",
-            "Number of A2A2 (genotype)",
+            "Proportion of A\u2081 (allele)",
+            "Proportion of A\u2082 (allele)",
+            "Proportion of A\u2081A\u2081 (genotype)",
+            "Proportion of A\u2081A\u2082 (genotype)",
+            "Proportion of A\u2082A\u2082 (genotype)",
         ]
     }
 
@@ -544,17 +759,17 @@ class Graph extends React.Component {
             lines.push(
                 <Line
                     type="linear"
-                    dataKey={getName(i, this.state.yaxis)}
-                    key={"Pop_" + (i)}
+                    dataKey={getName(i, this.state.yaxis, true)}
+                    key={getName(i, this.state.yaxis, true)}
                     stroke={this.colors[i]}
                     dot={false}
                 />
             )
         };
 
-        let checks = [];
+        let radios = [];
         for (let i = 0; i < 5; i++) {
-            checks.push(
+            radios.push(
                 <td key={i}>
                     <input 
                         type="radio"
@@ -570,12 +785,9 @@ class Graph extends React.Component {
 
         return (
             <div id="graph">
-                <table><tbody><tr>
-                    {checks}
-                </tr></tbody></table>
                 <ResponsiveContainer height={450}>
                     <LineChart
-                        data={this.props.data}
+                        data={this.props.sim_data}
                         type="number"
                         margin={{
                             top: 30, right: 30, left: 30, bottom: 30,
@@ -590,7 +802,7 @@ class Graph extends React.Component {
                                 position: "bottom",
                                 style: {textAnchor: "middle"},
                             }}
-                            domain={['dataMin', 'dataMax']}
+                            domain={["dataMin", "dataMax"]}
                         />
                         <YAxis
                             type="number"
@@ -606,6 +818,9 @@ class Graph extends React.Component {
                         {lines}
                     </LineChart>
                 </ResponsiveContainer>
+                <table id="graph_options"><tbody><tr>
+                    {radios}
+                </tr></tbody></table>
             </div>
         );
     }
@@ -615,5 +830,5 @@ class Graph extends React.Component {
 
 ReactDOM.render(
     <App />,
-    document.getElementById('content')
+    document.getElementById("content")
 );
