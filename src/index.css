@@ -37,22 +37,13 @@ body {
     background-color: var(--base);
 }
 
-input {
+input[type=number] {
+    -moz-appearance:textfield;
     padding: 2px;
     border-radius: 4px;
     font-family: RedHat, Courier, monospace;
     margin: 5px;
     width: 50px;
-}
-
-input[type=checkbox] {
-    border: 1px solid var(--accent2);
-    background-color: var(--accent3);
-    color: var(--accent2);
-}
-
-input[type=number] {
-    -moz-appearance:textfield;
 }
 
 input[type=number]::-webkit-inner-spin-button,
@@ -126,6 +117,16 @@ h1 {
     display: none;
 }
 
+.checkbox_label {
+    color: var(--accent2);
+    font-style: italic;
+    font-size: 14px;
+}
+
+.checkbox_tick {
+    margin-right: 7px;
+}
+
 #error_message {
     text-align: center;
     font-size: 8pt;
@@ -177,6 +178,20 @@ h1 {
 
 #graph_options {
     margin-left: 45px;
+    margin-right: 10px;
+    margin-top: 20px;
+    border: 2px solid var(--accent2);
+    border-radius: 10px;
+    width: 85%;
+}
+
+#graph_options_title {
+    text-align: center;
+    font-weight: bold;
+    text-decoration: underline;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    color: var(--bg);
 }
 
 #bottom_notes {

@@ -49,6 +49,47 @@ function getKeyandIndex(string) {
     }
 }
 
+function processRow(row) {
+    let finalVal = '';
+    for (let j = 0; j < row.length; j++) {
+        let innerValue = row[j] === null ? '' : row[j].toString();
+        if (row[j] instanceof Date) {
+            innerValue = row[j].toLocaleString();
+        };
+        let result = innerValue.replace(/"/g, '""');
+        if (result.search(/("|,|\n)/g) >= 0)
+            result = '"' + result + '"';
+        if (j > 0)
+            finalVal += ',';
+        finalVal += result;
+    }
+    return finalVal + '\n';
+};
+
+function exportToCsv(filename, rows) {
+    // comes from https://stackoverflow.com/a/24922761/13597979
+    let csvFile = '';
+    for (let i = 0; i < rows.length; i++) {
+        csvFile += processRow(rows[i]);
+    }
+    let blob = new Blob([csvFile], { type: 'text/csv;charset=utf-8;' });
+    if (navigator.msSaveBlob) { // IE 10+
+        navigator.msSaveBlob(blob, filename);
+    } else {
+        let link = document.createElement("a");
+        if (link.download !== undefined) { // feature detection
+            // Browsers that support HTML5 download attribute
+            let url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    }
+}
+
 const defaults = {
     num_pops: 5,
     num_gens: 100,
@@ -113,6 +154,7 @@ class App extends React.Component {
         this.handleEntryChange = this.handleEntryChange.bind(this);
         this.handleClick = this.handleClick.bind(this);
         this.runSimulation = this.runSimulation.bind(this);
+        this.saveCSV = this.saveCSV.bind(this);
     }
 
     handleEntryChange(event, key, is_int) {
@@ -253,9 +295,6 @@ class App extends React.Component {
                 freq22 = 1 - freq11 - freq12;
             temp_obj[getName(i, 1)] = p;
             temp_obj[getName(i, 2)] = q;
-            temp_obj[getName(i, 11)] = Infinity;
-            temp_obj[getName(i, 12)] = Infinity;
-            temp_obj[getName(i, 22)] = Infinity;
             temp_obj[getName(i, 11, true)] = freq11;
             temp_obj[getName(i, 12, true)] = freq12;
             temp_obj[getName(i, 22, true)] = freq22;
@@ -302,23 +341,63 @@ class App extends React.Component {
         }
     }
 
-    ______getOffspring(obj, pop_num) {
-        let fit11 = this.state.values[5],
-            fit12 = this.state.values[6],
-            fit22 = this.state.values[7],
-            num11 = obj[getName(pop_num, 11)],
-            num12 = obj[getName(pop_num, 12)],
-            num22 = obj[getName(pop_num, 22)],
-            sum = num11*fit11 + num12*fit12 + num22*fit22,
+    _getNextInfGen(new_obj, obj) {
+        let mut_var = 1 - this.state.mutation[0] - this.state.mutation[1];
+        for (let i = 0; i < this.state.num_pops; i++) {
+            let x11 = obj[getName(i, 11, true)] * this.state.fitness[0],
+                x12 = obj[getName(i, 12, true)] * this.state.fitness[1],
+                x22 = obj[getName(i, 22, true)] * this.state.fitness[2],
+                sumx = x11 + x12 + x22,
+                a12 = x12 / sumx,
+                a22 = x22 / sumx,
+                numr_var = a12*mut_var + 2*a22*mut_var + 2*this.state.mutation[0],
+                next_freq11 = round((numr_var - 2)**2/4),
+                next_freq22 = round(numr_var**2/4),
+                next_freq12 = round(1 - next_freq11 - next_freq22);
+            new_obj[getName(i, 11, true)] = next_freq11;
+            new_obj[getName(i, 12, true)] = next_freq12;
+            new_obj[getName(i, 22, true)] = next_freq22;
+            Object.assign(new_obj, this._getInfFreqs(i, next_freq11, next_freq12, next_freq22))
+        }
+        return new_obj;
+    }
+
+    _getNextInfGen_wMig(new_obj, obj) {
+        let cur_obj = this._getNextInfGen({}, obj);
+        for (let i = 0; i < this.state.num_pops; i++) {
+            let next_i = (i + 1) % this.state.num_pops,
+                mig_rate = this.state.mig_rate,
+                freq11 = round(cur_obj[getName(i, 11, true)] * (1 - mig_rate) + cur_obj[getName(next_i, 11, true)] * mig_rate),
+                freq12 = round(cur_obj[getName(i, 12, true)] * (1 - mig_rate) + cur_obj[getName(next_i, 12, true)] * mig_rate),
+                freq22 = round(1 - freq11 - freq12);
+            new_obj[getName(i, 11, true)] = freq11;
+            new_obj[getName(i, 12, true)] = freq12;
+            new_obj[getName(i, 22, true)] = freq22;
+            Object.assign(new_obj, this._getInfFreqs(i, freq11, freq12, freq22))
+        }
+        return new_obj;
+    }
+
+    _getBndOffspring(num11, num12, num22) {
+        let fit11 = this.state.fitness[0],
+            fit12 = this.state.fitness[1],
+            fit22 = this.state.fitness[2],
+            sum = num11 * fit11 + num12 * fit12 + num22 * fit22,
             parents = [];
         for (let i = 0; i < 2; i++) {
             let rand = Math.random();
-            if (rand < num11*fit11/sum) {
+            if (rand < num11 * fit11 / sum) {
                 parents.push(11);
-            } else if (rand < (num11*fit11 + num12*fit12)/sum) {
+                num11--;
+                sum -= fit11;
+            } else if (rand < (num11 * fit11 + num12 * fit12) / sum) {
                 parents.push(12);
+                num12--;
+                sum -= fit12;
             } else {
                 parents.push(22);
+                num22--;
+                sum -= fit22;
             }
         }
         let p_min = Math.min(parents[0], parents[1]),
@@ -357,10 +436,10 @@ class App extends React.Component {
         }
     }
 
-    ______getMutantOffspring(obj, pop_num) {
-        let m12 = this.state.values[8],
-            m21 = this.state.values[9],
-            child = this.getOffspring(obj, pop_num),
+    _getBndOffspring_wMut(num11, num12, num22) {
+        let m12 = this.state.mutation[0],
+            m21 = this.state.mutation[1],
+            child = this._getBndOffspring(num11, num12, num22),
             rand = Math.random();
         if (child === 11) {
             if (rand < m12**2) {
@@ -389,83 +468,98 @@ class App extends React.Component {
         }
     }
 
-    ______getNextGen(obj) {
-        let temp_obj = {};
+    _getNextBndGen(new_obj, obj) {
         for (let i = 0; i < this.state.num_pops; i++) {
-            let num11 = 0,
-                num12 = 0,
-                num22 = 0;
+            let next_num11 = 0,
+                next_num12 = 0,
+                next_num22 = 0,
+                num11 = obj[getName(i, 11)],
+                num12 = obj[getName(i, 12)],
+                num22 = obj[getName(i, 22)];
             for (let j = 0; j < this.state.pop_size; j++) {
                 let child;
                 if (this.state.is_checked["check_mut"]) {
-                    child = this.getMutantOffspring(obj, i)
+                    child = this._getBndOffspring_wMut(num11, num12, num22)
                 } else {
-                    child = this.getOffspring(obj, i)
+                    child = this._getBndOffspring(num11, num12, num22)
                 }
                 if (child === 11) {
-                    num11++;
+                    next_num11++;
                 } else if (child === 12) {
-                    num12++;
+                    next_num12++;
                 } else {
-                    num22++;
+                    next_num22++;
                 }
             }
-            temp_obj[getName(i, 11)] = num11;
-            temp_obj[getName(i, 12)] = num12;
-            temp_obj[getName(i, 22)] = num22;
+            new_obj[getName(i, 11)] = next_num11;
+            new_obj[getName(i, 12)] = next_num12;
+            new_obj[getName(i, 22)] = next_num22;
+            Object.assign(new_obj, this._getBndFreqs(i, next_num11, next_num12, next_num22))
         }
-        let temp_copy;
-        if (this.state.is_checked["check_mig"]) {
-            temp_copy = Object.assign({}, temp_obj);
-        }
-        for (let i = 0; i < this.state.num_pops; i++) {
-            if (this.state.is_checked["check_mig"]) {
-                let neighbor = (i % this.state.num_pops) + 1,
-                    genotypes = [11, 12, 22];
-                for (let j = 0; j < 3; j++) {
-                    let gt = genotypes[j]
-                    temp_obj[getName(i, gt)] =
-                        Math.round(temp_copy[getName(neighbor, gt)] * this.state.mig_rate) + 
-                        Math.round(temp_copy[getName(i, gt)] * (1 - this.state.mig_rate));
-                }
-            }
-            let num11 = temp_obj[getName(i, 11)],
-                num12 = temp_obj[getName(i, 12)],
-                num22 = temp_obj[getName(i, 22)];
-            Object.assign(temp_obj, this._getBndFreqs(i, num11, num12, num22))
-        }
-        return temp_obj
+        return new_obj
     }
 
-    _getNextInfGen(new_obj, obj) {
-        let mut_var = 1 - this.state.mutation[0] - this.state.mutation[1];
+    _getBndMigrants(num11, num12, num22) {
+        let mig_num11 = 0,
+            mig_num12 = 0,
+            mig_num22 = 0,
+            num_migrants = round(this.state.pop_size * this.state.mig_rate, 0),
+            sum = num11 + num12 + num22;
+        for (let i = 0; i < num_migrants; i++) {
+            let rand = Math.random();
+            if (rand < num11 / sum) {
+                mig_num11++;
+                num11--;
+            } else if (rand < (num11 + num12) / sum) {
+                mig_num12++;
+                num12--;
+            } else {
+                mig_num22++;
+                num22--;
+            }
+            sum--;
+        }
+        return [mig_num11, mig_num12, mig_num22];
+    }
+
+    _getNextBndGen_wMig(new_obj, obj) {
+        let num11 = obj[getName(0, 11)],
+            num12 = obj[getName(0, 12)],
+            num22 = obj[getName(0, 22)],
+            migrants = [this._getBndMigrants(num11, num12, num22)];
         for (let i = 0; i < this.state.num_pops; i++) {
-            let x11 = obj[getName(i, 11, true)] * this.state.fitness[0],
-                x12 = obj[getName(i, 12, true)] * this.state.fitness[1],
-                x22 = obj[getName(i, 22, true)] * this.state.fitness[2],
-                sumx = x11 + x12 + x22,
-                a12 = x12 / sumx,
-                a22 = x22 / sumx,
-                numr_var = a12*mut_var + 2*a22*mut_var + 2*this.state.mutation[0],
-                next_freq11 = round((numr_var - 2)**2/4),
-                next_freq22 = round(numr_var**2/4),
-                next_freq12 = round(1 - next_freq11 - next_freq22);
-            new_obj[getName(i, 11, true)] = next_freq11;
-            new_obj[getName(i, 12, true)] = next_freq12;
-            new_obj[getName(i, 22, true)] = next_freq22;
-            new_obj[getName(i, 11)] = Infinity;
-            new_obj[getName(i, 12)] = Infinity;
-            new_obj[getName(i, 22)] = Infinity;
-            Object.assign(new_obj, this._getInfFreqs(i, next_freq11, next_freq12, next_freq22))
+            let next_i = (i + 1) % this.state.num_pops,
+                next_num11 = obj[getName(next_i, 11)],
+                next_num12 = obj[getName(next_i, 12)],
+                next_num22 = obj[getName(next_i, 22)];
+            if (next_i > 0) {
+                migrants.push(this._getBndMigrants(next_num11, next_num12, next_num22))
+            }
+            let num11 = obj[getName(i, 11)] - migrants[i][0] + migrants[next_i][0],
+                num12 = obj[getName(i, 12)] - migrants[i][1] + migrants[next_i][1],
+                num22 = obj[getName(i, 22)] - migrants[i][2] + migrants[next_i][2];
+            new_obj[getName(i, 11)] = num11;
+            new_obj[getName(i, 12)] = num12;
+            new_obj[getName(i, 22)] = num22;
+            Object.assign(new_obj, this._getBndFreqs(i, num11, num12, num22))
         }
         return new_obj;
     }
 
     getNextGen(obj) {
         if (this.state.is_checked["check_pop"]) {
-            return this._getNextInfGen({}, obj);
+            if (this.state.is_checked["check_mig"]) {
+                return this._getNextInfGen_wMig({}, obj);
+            } else {
+                return this._getNextInfGen({}, obj);
+            }
         } else {
-            // TODO
+            let new_obj = this._getNextBndGen({}, obj);
+            if (this.state.is_checked["check_mig"]) {
+                return this._getNextBndGen_wMig({}, new_obj)
+            } else {
+                return new_obj
+            }
         }
     }
 
@@ -487,14 +581,23 @@ class App extends React.Component {
                 previous_dp = Object.assign({}, data_point);
                 data.push(data_point);
             }
-            // console.log(data); // TODO
             this.setState({
                 sim_data: data,
                 lines: this.state.num_pops,
                 run_message: 0, // reset message
             })
+            return data;
         }
-        
+    }
+
+    saveCSV() {
+        let data = this.runSimulation().slice();
+        let keys = Object.keys(data[0]),
+            rows = [keys];
+        for (let i = 0; i < data.length; i++) {
+            rows.push(Object.values(data[i]))
+        }
+        exportToCsv("GeneticSim.csv", rows);
     }
 
     render() {
@@ -515,6 +618,7 @@ class App extends React.Component {
                     handleEntryChange={this.handleEntryChange}
                     handleClick={this.handleClick}
                     runSimulation={this.runSimulation}
+                    saveCSV={this.saveCSV}
                 />
                 <Graph
                     sim_data={this.state.sim_data}
@@ -541,7 +645,7 @@ class Options extends React.Component {
             case data_keys[1]:
                 return (<span># Generations</span>);
             case data_keys[2]:
-                return (<span>Population Size</span>);
+                return (<span>Pop Size</span>);
             case data_keys[3]:
                 if (key_info[1] >= 0) {
                     return (<span>Freq(A<sub>1</sub>) - Pop {key_info[1]}</span>);
@@ -605,8 +709,10 @@ class Options extends React.Component {
                         type="checkbox"
                         checked={this.props.is_checked[key] ? "checked" : ""}
                         onChange={(event) => this.props.handleClick(event, key)}
+                        className="checkbox_tick"
+                        id={key}
                     />
-                    <label>
+                    <label className="checkbox_label" htmlFor={key}>
                         {this.getTitle(key)}
                     </label>
                 </td>
@@ -683,7 +789,7 @@ class Options extends React.Component {
                 </tbody></table>
                 <table><tbody><tr>
                     {this.getButton("Run", this.props.runSimulation)}
-                    {this.getButton("Save As CSV", (_) => alert("I haven't implimented this yet. teehee"))}
+                    {this.getButton("Save As CSV", this.props.saveCSV)}
                 </tr></tbody></table>
                 <div 
                     id="error_message"
@@ -753,7 +859,7 @@ class Graph extends React.Component {
         })
     }
 
-    render() {
+    getLines() {
         let lines = [];
         for (let i = 0; i < this.props.lines; i++) {
             lines.push(
@@ -762,11 +868,15 @@ class Graph extends React.Component {
                     dataKey={getName(i, this.state.yaxis, true)}
                     key={getName(i, this.state.yaxis, true)}
                     stroke={this.colors[i]}
+                    strokeWidth={2}
                     dot={false}
                 />
             )
         };
+        return lines;
+    }
 
+    getRadios() {
         let radios = [];
         for (let i = 0; i < 5; i++) {
             radios.push(
@@ -775,14 +885,18 @@ class Graph extends React.Component {
                         type="radio"
                         onChange={(event) => this.handleClick(event, i)}
                         checked={i === this.convertNumber(this.state.yaxis, true) ? "checked" : ""}
+                        id={"radio" + i}
                     />
-                    <label>
+                    <label htmlFor={"radio" + i}>
                         {this.html_titles[i]}
                     </label>
                 </td>
             )
         }
+        return radios;
+    }
 
+    render() {
         return (
             <div id="graph">
                 <ResponsiveContainer height={450}>
@@ -803,6 +917,7 @@ class Graph extends React.Component {
                                 style: {textAnchor: "middle"},
                             }}
                             domain={["dataMin", "dataMax"]}
+                            axisLine={{strokeWidth: 2}}
                         />
                         <YAxis
                             type="number"
@@ -813,14 +928,16 @@ class Graph extends React.Component {
                                 style: {textAnchor: "middle"},
                             }}
                             domain={[0, 1]}
+                            axisLine={{strokeWidth: 2}}
                         />
                         <Tooltip />
-                        {lines}
+                        {this.getLines()}
                     </LineChart>
                 </ResponsiveContainer>
-                <table id="graph_options"><tbody><tr>
-                    {radios}
-                </tr></tbody></table>
+                <table id="graph_options"><tbody>
+                    <tr><td colSpan={5} id="graph_options_title">Y-Axis Variable</td></tr>
+                    <tr>{this.getRadios()}</tr>
+                </tbody></table>
             </div>
         );
     }
