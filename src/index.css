@@ -127,6 +127,10 @@ h1 {
     margin-right: 7px;
 }
 
+.y_options {
+    text-align: center;
+}
+
 #error_message {
     text-align: center;
     font-size: 8pt;
@@ -203,4 +207,20 @@ h1 {
     bottom: 0;
     width: 100%;
     padding-bottom: 15px;
+}
+
+@media (max-width:700px) {
+    #main {
+        display: block;
+        width: 100%;
+    }
+
+    #options {
+        width: 100%;
+    }
+
+    #graph {
+        width: 100%;
+    }
+  
 }

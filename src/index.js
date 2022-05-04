@@ -101,6 +101,7 @@ const defaults = {
     mut_12: 0,
     mut_21: 0,
     mig_rate: 0,
+    inb_rate: 0,
 };
 
 const data_keys = [
@@ -111,6 +112,7 @@ const data_keys = [
     "fitness",
     "mutation",
     "mig_rate",
+    "inb_rate",
 ];
 
 const check_keys = [
@@ -119,6 +121,7 @@ const check_keys = [
     "check_fit",
     "check_mut",
     "check_mig",
+    "check_inb",
 ];
 
 class App extends React.Component {
@@ -145,6 +148,7 @@ class App extends React.Component {
                 pop_size: true,
                 freqs_a1: true,
             },
+            inb_rate: defaults.inb_rate,
             is_checked: check_keys.reduce((l, c) => Object.assign(l, {[c]: false}), {}),
             sim_data: [],
             run_message: 0,
@@ -202,6 +206,7 @@ class App extends React.Component {
             fitness = this.state.fitness.slice(),
             mutation = this.state.mutation.slice(),
             mig_rate = this.state.mig_rate,
+            inb_rate = this.state.inb_rate,
             is_entry_valid = Object.assign({}, this.state.is_entry_valid);
         is_checked[key] = new_state;
         if (key === "check_pop") {
@@ -255,13 +260,21 @@ class App extends React.Component {
             } else {
                 delete is_entry_valid["mig_rate"]
             }
-        } 
+        } else if (key === "check_inb") {
+            inb_rate = defaults.inb_rate;
+            if (new_state) {
+                is_entry_valid["inb_rate"] = true;
+            } else {
+                delete is_entry_valid["inb_rate"]
+            }
+        }
         this.setState({
             pop_size: pop_size,
             freqs_a1: freqs_a1,
             fitness: fitness,
             mutation: mutation,
             mig_rate: mig_rate,
+            inb_rate: inb_rate,
             is_checked: is_checked,
             is_entry_valid: is_entry_valid,
         })
@@ -342,7 +355,10 @@ class App extends React.Component {
     }
 
     _getNextInfGen(new_obj, obj) {
-        let mut_var = 1 - this.state.mutation[0] - this.state.mutation[1];
+        let m12 = this.state.mutation[0],
+            m21 = this.state.mutation[1],
+            mut_var = 1 - m12 - m21,
+            inb_rate = this.state.inb_rate;
         for (let i = 0; i < this.state.num_pops; i++) {
             let x11 = obj[getName(i, 11, true)] * this.state.fitness[0],
                 x12 = obj[getName(i, 12, true)] * this.state.fitness[1],
@@ -354,6 +370,15 @@ class App extends React.Component {
                 next_freq11 = round((numr_var - 2)**2/4),
                 next_freq22 = round(numr_var**2/4),
                 next_freq12 = round(1 - next_freq11 - next_freq22);
+            if (inb_rate) {
+                let a11 = 1 - a12 - a22,
+                    inb_freq11 = round(a11*(1-m12)**2 + a12*0.25*((1-m12)**2+2*m21*(1-m12)+m21**2) + a22*m21**2),
+                    inb_freq22 = round(a22*(1-m21)**2 + a12*0.25*((1-m21)**2+2*m12*(1-m21)+m12**2) + a11*m12**2),
+                    inb_freq12 = round(1 - inb_freq11 - inb_freq22);
+                next_freq11 = round(inb_rate * inb_freq11 + (1 - inb_rate) * next_freq11);
+                next_freq12 = round(inb_rate * inb_freq12 + (1 - inb_rate) * next_freq12);
+                next_freq22 = round(inb_rate * inb_freq22 + (1 - inb_rate) * next_freq22);
+            }
             new_obj[getName(i, 11, true)] = next_freq11;
             new_obj[getName(i, 12, true)] = next_freq12;
             new_obj[getName(i, 22, true)] = next_freq22;
@@ -382,6 +407,7 @@ class App extends React.Component {
         let fit11 = this.state.fitness[0],
             fit12 = this.state.fitness[1],
             fit22 = this.state.fitness[2],
+            inb_rate = this.state.inb_rate,
             sum = num11 * fit11 + num12 * fit12 + num22 * fit22,
             parents = [];
         for (let i = 0; i < 2; i++) {
@@ -399,6 +425,9 @@ class App extends React.Component {
                 num22--;
                 sum -= fit22;
             }
+        }
+        if (Math.random() < inb_rate) {
+            parents[0] = parents[1];
         }
         let p_min = Math.min(parents[0], parents[1]),
             p_max = Math.max(parents[0], parents[1]),
@@ -611,6 +640,7 @@ class App extends React.Component {
                     fitness={this.state.fitness}
                     mutation={this.state.mutation}
                     mig_rate={this.state.mig_rate}
+                    inb_rate={this.state.inb_rate}
                     is_entry_valid={this.state.is_entry_valid}
                     is_checked={this.state.is_checked}
                     run_message={this.state.run_message}
@@ -668,6 +698,8 @@ class Options extends React.Component {
                 }
             case data_keys[6]:
                 return (<span>Rate</span>);
+            case data_keys[7]:
+                return (<span>Selfing Rate</span>);
             
             // checkbox fields
             case check_keys[0]:
@@ -680,6 +712,8 @@ class Options extends React.Component {
                 return (<span>Mutation</span>);
             case check_keys[4]:
                 return (<span>Migration</span>);
+            case check_keys[5]:
+                return (<span>Inbreeding</span>);
         }
         return (<span>Error: Title Not Found</span>);
     }
@@ -772,6 +806,11 @@ class Options extends React.Component {
             rows.push(this.getEntry("mig_rate", this.props.mig_rate));
         }
         rows.push(this.getHRule("divider_6"));
+        rows.push(this.getCheck("check_inb"));
+        if (this.props.is_checked["check_inb"]) {
+            rows.push(this.getEntry("inb_rate", this.props.inb_rate));
+        }
+        rows.push(this.getHRule("divider_7"));
         return rows;
     }
 
@@ -880,7 +919,7 @@ class Graph extends React.Component {
         let radios = [];
         for (let i = 0; i < 5; i++) {
             radios.push(
-                <td key={i}>
+                <td key={i} className="y_options">
                     <input 
                         type="radio"
                         onChange={(event) => this.handleClick(event, i)}
